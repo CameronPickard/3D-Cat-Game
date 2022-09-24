@@ -20,6 +20,7 @@ public class FPSInput : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        //TODO: Get rid of this?
         /*float deltaX = speed * Input.GetAxis("Horizontal");
         float deltaZ = speed * Input.GetAxis("Vertical");
         Vector3 movement = new Vector3(deltaX, 0, deltaZ);
