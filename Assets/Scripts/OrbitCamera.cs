@@ -29,7 +29,7 @@ public class OrbitCamera : MonoBehaviour
         _rotY += Input.GetAxis("Mouse X") * rotSpeed * 3; //mouse input
         _rotX += Input.GetAxis("Mouse Y") * rotSpeed * 3 * (InvertedY ? -1 : 1); //mouse input
 
-        Debug.Log("Orbit Camera - rotX: " + _rotX);
+        //Debug.Log("Orbit Camera - rotX: " + _rotX);
 
         Quaternion rotation = Quaternion.Euler(_rotX, _rotY, 0);
         //Pg 147

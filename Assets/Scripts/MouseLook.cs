@@ -2,6 +2,9 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// TODO: Delete
+/// </summary>
 public class MouseLook : MonoBehaviour
 {
     public enum RotationAxes

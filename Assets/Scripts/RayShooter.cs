@@ -5,11 +5,13 @@ using UnityEngine;
 public class RayShooter : MonoBehaviour
 {
     /// <summary>
-    /// If a character controller is defined, it means we dont want our ray shooter to hit our character. Defined in 3rd person games, undefined in FPS games (typically
-    /// ** 
+    /// If a character controller is defined, it means we dont want our ray shooter to hit our character. Defined in 3rd person games, undefined in FPS games (typically)
     /// </summary>
    [SerializeField] private CharacterController character;
-
+   [SerializeField] private bool _isDebugging = false;
+   /// <summary>
+   /// Camera obejct
+   /// </summary>
     private Camera _camera;
     // Start is called before the first frame update
     void Start()
@@ -27,17 +29,20 @@ public class RayShooter : MonoBehaviour
         float posY = _camera.pixelHeight / 2;
         GUI.Label(new Rect(posX, posY, size, size), "*");
     }
+
     // Update is called once per frame
     void Update()
     {
         if(Input.GetMouseButtonDown(0))
         {
             Vector3 point;
-            //if (character != null) { point = character.transform.position; } //3rd person
-            point = new Vector3(_camera.pixelWidth / 2, _camera.pixelHeight / 2, 0); //1st person //I think this is the origin of the camera...
+            point = new Vector3(_camera.pixelWidth / 2, _camera.pixelHeight / 2, 0);
             Ray ray = _camera.ScreenPointToRay(point);
-            Debug.Log("Point: " + point.ToString());
-            Debug.Log("Ray: " + ray.ToString());
+            if(_isDebugging) 
+            {
+                Debug.Log("Point: " + point.ToString());
+                Debug.Log("Ray: " + ray.ToString());
+            }
             RaycastHit hit;
             if (Physics.Raycast(ray, out hit))
             {
@@ -55,6 +60,11 @@ public class RayShooter : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Create a sphere at a certain position
+    /// </summary>
+    /// <param name="pos">Position at which to create the sphere</param>
+    /// <returns></returns>
     private IEnumerator SphereIndicator(Vector3 pos)
     {
         GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
