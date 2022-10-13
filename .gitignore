@@ -142,3 +142,8 @@ PackageBackups/
 
 # UWP builds
 /UWP/*
+
+*====================
+*Project-specific
+*====================
+/[Aa]ssets/Plugins/Pixelplacement*
