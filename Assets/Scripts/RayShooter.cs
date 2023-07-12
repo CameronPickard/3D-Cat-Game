@@ -35,7 +35,7 @@ public class RayShooter : MonoBehaviour
     {
         if(Input.GetMouseButtonDown(0))
         {
-            Vector3 point;
+            /*Vector3 point;
             point = new Vector3(_camera.pixelWidth / 2, _camera.pixelHeight / 2, 0);
             Ray ray = _camera.ScreenPointToRay(point);
             if(_isDebugging) 
@@ -56,7 +56,7 @@ public class RayShooter : MonoBehaviour
                 {
                     StartCoroutine(SphereIndicator(hit.point));
                 }
-            }
+            }*/
         }
     }
 

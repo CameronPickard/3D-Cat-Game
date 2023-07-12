@@ -10,10 +10,17 @@ public class PlayerCharacter : MonoBehaviour
     /// <summary>Current health</summary>
     private int _health;
 
-    // Start is called before the first frame update
-    void Start()
+	#region Scripts
+	private DeviceOperator _deviceOperator;
+    private RelativeMovement _relativeMovement;
+	#endregion
+
+	// Start is called before the first frame update
+	void Start()
     {
         _health = 3;
+        _deviceOperator = gameObject.GetComponent<DeviceOperator>();
+        _relativeMovement = gameObject.GetComponent<RelativeMovement>();
     }
 
     // Update is called once per frame

@@ -1,5 +1,8 @@
 {
   "dependencies": {
+    "com.baracuda.runtime-monitoring": "https://github.com/JohnBaracuda/com.baracuda.runtime-monitoring.git",
+    "com.baracuda.thread-dispatcher": "https://github.com/JohnBaracuda/com.baracuda.thread-dispatcher.git",
+    "com.unity.cinemachine": "2.9.7",
     "com.unity.collab-proxy": "1.2.16",
     "com.unity.ide.rider": "1.1.4",
     "com.unity.ide.vscode": "1.2.1",

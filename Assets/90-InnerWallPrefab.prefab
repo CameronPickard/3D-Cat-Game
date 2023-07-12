@@ -12,8 +12,8 @@ GameObject:
   - component: {fileID: 4823657202379291348}
   - component: {fileID: 5549327803312884898}
   - component: {fileID: 7740529815616522669}
-  m_Layer: 0
-  m_Name: InnerWallPrefab (1)
+  m_Layer: 8
+  m_Name: 90-InnerWallPrefab
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

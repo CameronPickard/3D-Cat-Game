@@ -30,7 +30,7 @@ public class WanderingAI : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void FixedUpdate()
     {
         if (_alive)
         {
@@ -41,7 +41,7 @@ public class WanderingAI : MonoBehaviour
             if (Physics.SphereCast(ray, 0.75f, out hit)) //returns true if there's any collider intersection in the radius
             {
                 GameObject hitObject = hit.transform.gameObject;
-                if(!hitObject.name.Contains("Column") && !hitObject.name.Contains("Wall")) Debug.Log("Minion hit... " + hitObject.name);
+                //if(!hitObject.name.Contains("Column") && !hitObject.name.Contains("Wall")) Debug.Log("Minion hit... " + hitObject.name);
                 if(hitObject.GetComponent<PlayerCharacter>()) //player character is in range
                 {
                     if(_fireball == null)

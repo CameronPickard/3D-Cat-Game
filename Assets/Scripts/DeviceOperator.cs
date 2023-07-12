@@ -28,8 +28,7 @@ public class DeviceOperator : MonoBehaviour
                 //if (Vector3.Dot(transform.forward, direction) > .5f) {
                 if (dotProduct > .5f)
                 {
-                    hitCollider.SendMessage("Operate",
-                    SendMessageOptions.DontRequireReceiver);
+                    hitCollider.SendMessage("Operate", SendMessageOptions.DontRequireReceiver);
                 }
 			}
 		}
