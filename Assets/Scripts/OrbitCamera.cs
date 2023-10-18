@@ -3,6 +3,7 @@ using System;
 using UnityEngine;
 
 /// <summary>
+/// *****DEPRECATED. Look at OrbitVirtualCamera.cs******
 /// 3rd person camera that orbits around the player character.
 /// Created in Chapter 7, pg 146.
 /// </summary>
@@ -12,7 +13,7 @@ public class OrbitCamera : MonitoredBehaviour
     private static float maxNegCameraRotationX = -50.0f;
     [SerializeField] private Transform target;
 
-    public float rotSpeed = 1.5f;
+    public float rotSpeed = 2.5f;
 
     private bool InvertedY = false;
     private float _rotY;

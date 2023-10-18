@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 using Baracuda.Monitoring;
-using Cinemachine;
+using UnityEngine.UI;
 
 /// <summary>
 /// This class controls movement relative to the current camera position
@@ -14,11 +14,17 @@ public class RelativeMovement : MonitoredBehaviour
     /// <summary> Visual rotation speed of the model as it's moving (does not affect the movement of the object)</summary>
     private readonly float _visualRotationSpeed = 15.0f;
     /// <summary> Movement speed </summary>
-    private readonly float _moveSpeed = 6.0f;
+    private readonly float _moveSpeed = 7.0f;
     /// <summary> Launch speed </summary>
     private readonly float _launchSpeed = 10.0f;
     /// <summary> Steepest angle of a slope this character should be allowed to walk down. *Make this a positive number* </summary>
     private readonly int _steepestWalkableAngle = 45;
+    /// <summary> Max wiggle speed. 3.0 seems to be nice.</summary>
+    private readonly float _maxWiggleSpeed = 3.0f;
+    /// <summary> Set how wiggling is controlled </summary>
+    private readonly WiggleMechanics _howToWiggle = WiggleMechanics.Hybrid;
+    private readonly WiggleInput _wiggleInputButton = WiggleInput.LeftStick;
+
 
     #region Jumping/falling constants
     [MonitorField]
@@ -32,16 +38,18 @@ public class RelativeMovement : MonitoredBehaviour
     /// <summary> Initial falling velocity </summary>
     private readonly float _initialFallVelocity = -1.5f;
     /// <summary> Coyote time frames </summary>
-    private readonly int _coyotoeTimeFrames = 3;
+    private readonly int _coyotoeTimeFrames = 5;
     #endregion Jumping/falling constants
     #endregion Constants
 
     /// <summary> Reference to the target (the camera) that this object is moving relative to </summary>
     [SerializeField] private Transform target;
     [SerializeField] private GameObject virtualCameraObject;
-    private CinemachineVirtualCamera _virtualCameraCineObj;
     private OrbitVirtualCamera _virtualCameraScript;
-    [SerializeField] private GameObject normalCameraObject;
+    [SerializeField] private GameObject basicCameraObject;
+    private BasicCamera _basicCameraScript;
+    [SerializeField] private GameObject jumpPowerBar;
+    private Slider _jumpPowerSlider;
     /// <summary> Needed to store collision data between functions (p.156) </summary>
     private ControllerColliderHit _contact;
     /// <summary> Current vertical speed (with regard to falling & jumping </summary>
@@ -58,15 +66,22 @@ public class RelativeMovement : MonitoredBehaviour
     private float _launchXSpeed = 0.0f;
     private float _launchZSpeed = 0.0f;
     /// <summary> True if this object was in a state of "falling" last frame </summary>
+    [MonitorField]
     private bool _wasFallingLastFrame;
     private bool _isCrouching;
     [MonitorField]
     private float _wiggleSpeed = 0.0f;
-    private float _maxWiggleSpeed = 3.0f;
+    [MonitorField]
+    private float _wiggleXInput = 0.0f;
+    [MonitorField]
+    private int _framesOfNoWiggle = 0;
+    private int _nextExpectedWiggleDirection = 0;
     /// <summary> CharacterController object, used for movement </summary>
     private CharacterController _charController;
     /// <summary> Animator object </summary>
     private Animator _animator;
+
+    private Vector3 _spawnPosition;
 
     [MonitorField]
     private float _crouchInput;
@@ -81,7 +96,9 @@ public class RelativeMovement : MonitoredBehaviour
         _vertSpeed = _initialFallVelocity;
         _animator = GetComponent<Animator>();
         _virtualCameraScript = virtualCameraObject.GetComponent<OrbitVirtualCamera>();
-        _virtualCameraCineObj = virtualCameraObject.GetComponent<CinemachineVirtualCamera>();
+        _basicCameraScript = basicCameraObject.GetComponent<BasicCamera>();
+        _jumpPowerSlider = jumpPowerBar.GetComponent<Slider>();
+        _spawnPosition = transform.position;
     }
 
     // Update is called once per frame
@@ -98,7 +115,6 @@ public class RelativeMovement : MonitoredBehaviour
         float vertInput = Input.GetAxis("Vertical");
         _crouchInput = Input.GetAxis("Crouch");
         _animator.SetBool("Crouching", false); //might get overwritten later
-        _animator.SetFloat("Wiggling", horInput);
 		if (!_inMiddleOfLaunching && _framesSinceLaunch==6 && (horInput != 0 || vertInput != 0))
 		{
             #region Ground Movement
@@ -172,8 +188,9 @@ public class RelativeMovement : MonitoredBehaviour
             _framesInTheAir = 0;
             if (_crouchInput == 1.00f)
             {
-                setCrouchingValues(true, horInput);
-                if(isJumpButtonDown) 
+                if (_wiggleInputButton == WiggleInput.LeftStick) setCrouchingValues(true, horInput);
+                else if (_wiggleInputButton == WiggleInput.RightTrigger) setCrouchingValues(true, Input.GetAxis("RightTrigger"));
+                if (isJumpButtonDown) 
                 {
                     //LAUNCH HIM
 
@@ -208,11 +225,12 @@ public class RelativeMovement : MonitoredBehaviour
         {
             _framesInTheAir++;
             setCrouchingValues(false);
-            _vertSpeed += _gravity * 5 * Time.deltaTime;
-            if(_vertSpeed < _terminalFallVelocity) { 
-                _vertSpeed = _terminalFallVelocity;
-			}
+            _vertSpeed = Mathf.Max(_terminalFallVelocity, _vertSpeed + _gravity * 5 * Time.deltaTime);
 
+            if(_inMiddleOfLaunching && _framesSinceLaunch==6) 
+            {
+                isFallingThisFrame = true;    //not important for anything specific. Just good practice to have this set right.
+			}
             if (!_wasFallingLastFrame && _framesSinceLaunch==6 && !_inMiddleOfLaunching)
             {
                 //TODO: Iron out this downard-slope-walking math
@@ -230,7 +248,7 @@ public class RelativeMovement : MonitoredBehaviour
                 _animator.SetBool("Jumping", true);
 
                 //If grounded means: if bottom-curvature of capsule is touching something
-                if (_charController.isGrounded)
+                if (_charController.isGrounded && !_inMiddleOfLaunching) //TODO: _launching check should be improved. Just helps prevent edge-jitters during launching for Demo purposes
                 {
                     float contactDot = Vector3.Dot(movement, _contact.normal);
                     //What is a normal? https://answers.unity.com/questions/588972/what-is-a-normal.html
@@ -258,7 +276,12 @@ public class RelativeMovement : MonitoredBehaviour
         movement *= Time.deltaTime;
         _charController.Move(movement);
         _wasFallingLastFrame = isFallingThisFrame;
-    }
+
+		#region Death Plane Code
+        //Since people keep killing themselves in the Demo, Im gonna build in a min-height check that forces the character to respawn.
+        if(transform.position.y < -10.0f) { transform.position = _spawnPosition; }
+        #endregion
+	}
 
 	private void OnControllerColliderHit(ControllerColliderHit hit)
 	{
@@ -272,21 +295,96 @@ public class RelativeMovement : MonitoredBehaviour
 
     private void setCrouchingValues(bool isCrouchingNow, float horInput = 0.0f) 
     {
+        _wiggleXInput = horInput;
         if(isCrouchingNow) 
         {
             _isCrouching = true;
             _animator.SetBool("Crouching", _crouchInput == 1.00f);
-            _animator.SetFloat("Wiggling", horInput);
-            if (horInput > 0.01 || horInput < -0.01) { _wiggleSpeed = Mathf.Min(3.0f, Mathf.Max(0.5f, _wiggleSpeed) + 0.01f); }
-            else { _wiggleSpeed = Mathf.Max(0.0f, (_wiggleSpeed - 0.002f)); }
+            //_animator.SetFloat("Wiggling", horInput);
+            if(_howToWiggle==WiggleMechanics.Hold) 
+            {
+                //Ver. 1 - Holding left or right
+                if (horInput > 0.01 || horInput < -0.01) { _wiggleSpeed = Mathf.Min(3.0f, Mathf.Max(0.5f, _wiggleSpeed) + 0.008f); }
+                else { _wiggleSpeed = 0.0f; }
+            }
+            else if(_howToWiggle==WiggleMechanics.Mash) 
+            {
+                //Ver. 2 - Mashing left and right
+                float horInputAbs = Mathf.Abs(horInput);
+                if (horInputAbs < 0.01 || (_nextExpectedWiggleDirection!= 0 && horInput*_nextExpectedWiggleDirection < 0.01))
+                {
+                    _framesOfNoWiggle++;
+                    if (_framesOfNoWiggle > 30) { 
+                        _wiggleSpeed = 0.0f;
+                        _nextExpectedWiggleDirection = 0;
+                    }
+                }
+                else
+                {
+                    if (horInputAbs < 0.7)
+                    {
+                        _wiggleSpeed += 0.06f;
+                    }
+                    else
+                    {
+                        _wiggleSpeed += 0.15f;
+                    }
+                    Debug.Log("Flick strength: " + horInput);
+                    if(horInput>0.0) { _nextExpectedWiggleDirection = -1; }
+                    else { _nextExpectedWiggleDirection = 1; }
+                    _framesOfNoWiggle = 0;
+                    _wiggleSpeed = Mathf.Min(3.0f, Mathf.Max(0.5f, _wiggleSpeed));
+                }
+			}
+            else if(_howToWiggle==WiggleMechanics.Hybrid) {
+                float amountToAdd = 0.0f;
+                float horInputAbs = Mathf.Abs(horInput);
+                if (horInputAbs < 0.01) { _framesOfNoWiggle++; }
+                else { _framesOfNoWiggle = 0; }
+                if (_framesOfNoWiggle > 7)
+                {
+                    _wiggleSpeed = 0.0f;
+                    _nextExpectedWiggleDirection = 0;
+                }
+                else 
+                {
+                    amountToAdd = 0.4f;
+                    //Ver. 2 - Mashing left and right
+                    if (_nextExpectedWiggleDirection != 0 && horInput * _nextExpectedWiggleDirection < 0.01)
+                    {
+                        //nada
+                    }
+                    else
+                    {
+                        if (horInputAbs < 0.7)
+                        {
+                            amountToAdd += 1.6f;
+                        }
+                        else
+                        {
+                            amountToAdd += 2.8f;
+                        }
+                        Debug.Log("Flick strength: " + horInput);
+                        if (horInput > 0.0) { _nextExpectedWiggleDirection = -1; }
+                        else { _nextExpectedWiggleDirection = 1; }
+                    }
+                    _wiggleSpeed = Mathf.Min(3.0f, Mathf.Max(0.65f, _wiggleSpeed + amountToAdd * Time.deltaTime));
+                }
+            }
             _animator.SetFloat("wigglingSpeed", _wiggleSpeed);
             _virtualCameraScript.SetCrouching(true);
+            _basicCameraScript.SetCrouching(true);
+            _jumpPowerSlider.value = _wiggleSpeed * 10;
         }
         else 
         {
             _isCrouching = false;
             _wiggleSpeed = 0.0f;
+            _nextExpectedWiggleDirection = 0;
+            _framesOfNoWiggle = 0;
             _virtualCameraScript.SetCrouching(false);
+            _basicCameraScript.SetCrouching(false);
+            _jumpPowerSlider.value = 0.0f;
         }
 	}
 
@@ -294,4 +392,15 @@ public class RelativeMovement : MonitoredBehaviour
     {
         if (_isCrouching) { transform.rotation = Quaternion.Euler(transform.rotation.eulerAngles.x, rotation.y, transform.rotation.eulerAngles.z); }
 	}
+}
+
+enum WiggleMechanics {
+    Hold,
+    Mash,
+    Hybrid
+}
+
+enum WiggleInput {
+    LeftStick,
+    RightTrigger
 }

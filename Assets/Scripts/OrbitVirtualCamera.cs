@@ -10,10 +10,9 @@ using UnityEngine;
 public class OrbitVirtualCamera : MonitoredBehaviour
 {
 	#region Consts
-	private static float maxPosCameraRotationX = 75.0f;
-    private static float maxNegCameraRotationX = -50.0f;
-    private static float rotSpeed = 1.2f;
+    private static float rotSpeed = 200.0f;
     private static bool InvertedY = false;
+    private static bool InvertedX = true;
     #endregion Consts
 
     #region Serialized Fields 
@@ -37,6 +36,11 @@ public class OrbitVirtualCamera : MonitoredBehaviour
     private Transform _followTransform;
     private bool _isCrouching;
 
+    [MonitorField]
+    private Quaternion _followQuaternion;
+    [MonitorField]
+    private Vector3 _followEuler;
+
     // Start is called before the first frame update
     void Start()
     {
@@ -52,13 +56,22 @@ public class OrbitVirtualCamera : MonitoredBehaviour
     {
         if (!_cameraMarkBehavior.needToFocus)
         {
-            _rotY = Input.GetAxis("Right Joy X") * rotSpeed * 3; //mouse input
-            _rotX = Input.GetAxis("Right Joy Y") * rotSpeed * 3 * (InvertedY ? -1 : 1); //mouse input
+            float rotSpeedAdjusted = rotSpeed * Time.deltaTime;
+            _rotY = Input.GetAxis("Right Joy X") * rotSpeedAdjusted * (InvertedX ? 1 : -1); //mouse input
+            _rotX = Input.GetAxis("Right Joy Y") * rotSpeedAdjusted * (InvertedY ? -1 : 1); //mouse input
                                                                                         //_rotX = Math.Min(_rotX, maxPosCameraRotationX);
                                                                                         //_rotX = Math.Max(_rotX, maxNegCameraRotationX);
 
-
-            _followTransform.rotation = Quaternion.Euler(_followTransform.rotation.eulerAngles.x + _rotX, _followTransform.rotation.eulerAngles.y + _rotY, 0);
+            float newXEuler = _followTransform.rotation.eulerAngles.x + _rotX;
+            if(newXEuler > 89.0f && newXEuler < 180.0f) {
+                newXEuler = 89.0f;
+			}
+            else if(newXEuler < 271.0f && _followTransform.rotation.eulerAngles.x >= 180.0f) {
+                newXEuler = 271.0f;
+            }
+            _followTransform.rotation = Quaternion.Euler(newXEuler, _followTransform.rotation.eulerAngles.y + _rotY, 0);
+            _followQuaternion = _followTransform.rotation;
+            _followEuler = _followTransform.rotation.eulerAngles;
             transform.rotation = Quaternion.Euler(0, _followTransform.transform.rotation.eulerAngles.y, 0);
         }
         //if(_cameraMarkBehavior.hitGround) { _camera.riority
