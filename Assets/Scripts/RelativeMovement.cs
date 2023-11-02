@@ -52,6 +52,12 @@ public class RelativeMovement : MonitoredBehaviour
     private Slider _jumpPowerSlider;
     /// <summary> Needed to store collision data between functions (p.156) </summary>
     private ControllerColliderHit _contact;
+    [MonitorField]
+    private PlayerState _playerState;
+    private Vector3 _movement;
+    [MonitorField]
+    private float _horInput;
+    private float _vertInput;
     /// <summary> Current vertical speed (with regard to falling & jumping </summary>
     [MonitorField]
     private float _vertSpeed;
@@ -62,6 +68,7 @@ public class RelativeMovement : MonitoredBehaviour
     private bool _inMiddleOfJumping = false;
     [MonitorField]
     private bool _inMiddleOfLaunching = false;
+    [MonitorField]
     private int _framesSinceLaunch = 6;
     private float _launchXSpeed = 0.0f;
     private float _launchZSpeed = 0.0f;
@@ -104,56 +111,19 @@ public class RelativeMovement : MonitoredBehaviour
     // Update is called once per frame
     void Update()
     {
-        Vector3 movement = Vector3.zero; //Start with vector (0, 0, 0) and add movement components progressively
-        if (_framesSinceLaunch < 6 || _inMiddleOfLaunching) {
-            _inMiddleOfLaunching = true;
-            movement.x = _launchXSpeed;
-            movement.z = _launchZSpeed;
-		}
-        bool isFallingThisFrame = _wasFallingLastFrame;
-        float horInput = Input.GetAxis("Horizontal");
-        float vertInput = Input.GetAxis("Vertical");
+        _movement = Vector3.zero; //Start with vector (0, 0, 0) and add movement components progressively
+        _horInput = Input.GetAxis("Horizontal");
+        _vertInput = Input.GetAxis("Vertical");
         _crouchInput = Input.GetAxis("Crouch");
         _animator.SetBool("Crouching", false); //might get overwritten later
-		if (!_inMiddleOfLaunching && _framesSinceLaunch==6 && (horInput != 0 || vertInput != 0))
-		{
-            #region Ground Movement
-            //only handle movement while arrow keys are pressed
-            _launchXSpeed = 0.0f;
-            _launchZSpeed = 0.0f;
-			movement.x = horInput * _moveSpeed;
-			movement.z = vertInput * _moveSpeed;
-			movement = Vector3.ClampMagnitude(movement, _moveSpeed); //needed to ensure diagonal movement does not exceed the max speed
-
-            #region Rotate the camera
-			if (_isDebugging) { Debug.Log("Camera rotation: " + target.rotation); }
-			Quaternion tmp = target.rotation; //Keep the inital rotation to restore after finishing with the target object
-			target.eulerAngles = new Vector3(0, target.eulerAngles.y, 0); //We need to imagine the target is level with the player, for a couple lines
-			movement = target.TransformDirection(movement); //Transform movement direction from Local to Global coordinates, and do it from the perspective of the target
-			target.rotation = tmp; //restore target's
-			#endregion Rotate the camera
-
-			#region Rotate the player
-			#region When not using Lerp
-			//transform.rotation = Quaternion.LookRotation(movement); //LookRotation() calculates a quaternion facing in that direction
-			#endregion
-
-			#region Using Lerp
-            if(!_isCrouching) 
-            {
-                Quaternion direction = Quaternion.LookRotation(movement);
-                transform.rotation = Quaternion.Lerp(transform.rotation, direction, _visualRotationSpeed * Time.deltaTime);
-            }
-			#endregion
-			#endregion Rotate the player
-            #endregion Ground Movement
+        if (_framesSinceLaunch < 6) {
+            //State: JustLaunched = True / Response
+            _playerState = PlayerState.JustLaunched;
+            _inMiddleOfLaunching = true;
 		}
-		_animator.SetFloat("Speed", movement.sqrMagnitude);
-        if (_isDebugging && movement.sqrMagnitude > 0)
-        {
-            Debug.Log("total speed: " + movement.sqrMagnitude);
-            Debug.Log("isDebugging: " + _isDebugging);
-        }
+        else {
+            _inMiddleOfLaunching = false;
+		}
         #region Jumping/Falling Movement
         hitGround = false;
         RaycastHit hit;
@@ -162,63 +132,39 @@ public class RelativeMovement : MonitoredBehaviour
         bool wasNotRisingLastFrame = _vertSpeed < 0;
         if(wasNotRisingLastFrame && _framesSinceLaunch==6 && Physics.Raycast(transform.position, Vector3.down, out hit)) 
         {
+            //State: Grounded = True
             float check = (_charController.height + _charController.radius) / 12.5f;
-            if (_isDebugging) { Debug.Log("Char Height: " + _charController.height + ", Radius: " + _charController.radius + ", Check: " + check + ", hit.distance: " + hit.distance); }
             hitGround = hit.distance <= check;
-            if (hitGround && _inMiddleOfLaunching)
-            {
-                _inMiddleOfLaunching = false;
-            }
             //explanation on p.157
 		}
 
         bool inCoyoteTime = !_inMiddleOfLaunching && !hitGround && !_inMiddleOfJumping && _framesInTheAir < _coyotoeTimeFrames;
-        if ((hitGround || inCoyoteTime) && isJumpButtonDown && !_isCrouching && !_inMiddleOfLaunching && _framesSinceLaunch == 6) 
+        if(inCoyoteTime) 
         {
-            _vertSpeed = _jumpSpeed;
-            isFallingThisFrame = true;
-            _inMiddleOfJumping = true;
+            _playerState = PlayerState.CoyoteTime;
+        }
+        if ((_playerState == PlayerState.OnGround || _playerState == PlayerState.CoyoteTime) && isJumpButtonDown && _playerState != PlayerState.Crouching && !_inMiddleOfLaunching && _framesSinceLaunch == 6) 
+        {
+            _playerState = PlayerState.JumpStart;
         }
         else if(hitGround) //if bottom-center of capsule is touching ground
         {
+            //State: Grounded response
             _vertSpeed = _initialFallVelocity;
             _animator.SetBool("Jumping", false);
-            isFallingThisFrame = false;
             _inMiddleOfJumping = false;
             _framesInTheAir = 0;
             if (_crouchInput == 1.00f)
             {
-                if (_wiggleInputButton == WiggleInput.LeftStick) setCrouchingValues(true, horInput);
-                else if (_wiggleInputButton == WiggleInput.RightTrigger) setCrouchingValues(true, Input.GetAxis("RightTrigger"));
+                _playerState = PlayerState.Crouching;
                 if (isJumpButtonDown) 
                 {
-                    //LAUNCH HIM
-
-                    //ver.1 
-                    /*Vector3 launchDirection = _virtualCameraCineObj.LookAt.transform.position - normalCameraObject.transform.position;
-                    movement = Vector3.ClampMagnitude(launchDirection, _launchSpeed * _wiggleSpeed);
-                    _vertSpeed = movement.y;
-                    isFallingThisFrame = true;
-                    _inMiddleOfJumping = true;*/
-
-                    //ver.2
-                    
-                    movement = target.TransformDirection(new Vector3(0.0f, 0.0f, _launchSpeed * _wiggleSpeed));
-                    movement.y = movement.y + 12;
-                    _vertSpeed = movement.y;
-                    isFallingThisFrame = true;
-                    _inMiddleOfJumping = true;
-                    _inMiddleOfLaunching = true;
-                    _framesSinceLaunch = 0;
-                    _launchXSpeed = movement.x;
-                    _launchZSpeed = movement.z;
-                    setCrouchingValues(false);
-
+                    _playerState = PlayerState.LaunchStart;
+                    //State: LaunchStart = True
                 }
-                return;
             }
             else {
-                setCrouchingValues(false);
+                _playerState = PlayerState.OnGround; //unnecessary probably
             }
         } 
         else 
@@ -227,62 +173,215 @@ public class RelativeMovement : MonitoredBehaviour
             setCrouchingValues(false);
             _vertSpeed = Mathf.Max(_terminalFallVelocity, _vertSpeed + _gravity * 5 * Time.deltaTime);
 
-            if(_inMiddleOfLaunching && _framesSinceLaunch==6) 
+            if (!_wasFallingLastFrame && _framesSinceLaunch==6 && _playerState != PlayerState.JustLaunched)
             {
-                isFallingThisFrame = true;    //not important for anything specific. Just good practice to have this set right.
-			}
-            if (!_wasFallingLastFrame && _framesSinceLaunch==6 && !_inMiddleOfLaunching)
-            {
-                //TODO: Iron out this downard-slope-walking math
-                //float angleOfGroundNormal;
-                //float normalGroundMagnitude
-                //Vector3 normalXAndZ = new Vector3(movement.)
-                //If character wasn't falling last frame... there's a chance they're just walking down a slope. Let's try shoving the character downward for a single frame
-                Vector3 horizontalDisplacement = new Vector3(movement.x, 0, movement.z);
-                float groundSpeed = horizontalDisplacement.sqrMagnitude;
-                _vertSpeed = -3 * groundSpeed * Mathf.Tan(_steepestWalkableAngle); //TODO: assumes "worst-case" scenario (walking down the slope as steeply as possible) - which may not match what's actually happening
-                isFallingThisFrame = true;
+                //State: SlopeFrame
+                _playerState = PlayerState.SlopeFrame;
             }
-            else if (_contact != null)
+            else if (_contact != null && (_playerState != PlayerState.JustLaunched && _framesSinceLaunch == 6))
             {
-                _animator.SetBool("Jumping", true);
-
-                //If grounded means: if bottom-curvature of capsule is touching something
-                if (_charController.isGrounded && !_inMiddleOfLaunching) //TODO: _launching check should be improved. Just helps prevent edge-jitters during launching for Demo purposes
-                {
-                    float contactDot = Vector3.Dot(movement, _contact.normal);
-                    //What is a normal? https://answers.unity.com/questions/588972/what-is-a-normal.html
-                    //What is a dot product of vector? https://byjus.com/maths/dot-product-of-two-vectors/#:~:text=Dot%20Product%20of%20Vectors%3A,the%20direction%20of%20the%20vectors.
-                    //What is the magnitude of a vector? https://www.cuemath.com/magnitude-of-a-vector-formula/
-
-                    if (contactDot < 0)
-                    {
-                        //the surface normal and our object are facing away from each other
-                        movement = _contact.normal * _moveSpeed; //going up a slope. Dont let player keep their movement
-                    }
-                    else
-                    {
-                        //the surface normal and our object are facing towards each other
-                        movement += _contact.normal * _moveSpeed; //going down a steep slope. Let player keep their movement
-                    }
-                }
+                //State: Falling
+                _playerState = PlayerState.Falling;
             }
 		}
-        movement.y = _vertSpeed;
-        if(_framesSinceLaunch!=6) { _framesSinceLaunch++; }
         #endregion Jumping/Falling Movement
-
-        //Apply Movement
-        movement *= Time.deltaTime;
-        _charController.Move(movement);
-        _wasFallingLastFrame = isFallingThisFrame;
 
 		#region Death Plane Code
         //Since people keep killing themselves in the Demo, Im gonna build in a min-height check that forces the character to respawn.
-        if(transform.position.y < -10.0f) { transform.position = _spawnPosition; }
-        #endregion
-	}
+        if(transform.position.y < -10.0f) {
+            _playerState = PlayerState.DeathPlaneHit; 
+        }
 
+        #endregion Death Plane Code
+
+        switch (_playerState){
+            case PlayerState.CoyoteTime:
+                CoyoteTimeResponse();
+                break;
+            case PlayerState.Crouching:
+                CrouchingResponse();
+                break;
+            case PlayerState.DeathPlaneHit:
+                DeathPlaneHitResponse();
+                break;
+            case PlayerState.Falling:
+                FallingResponse();
+                break;
+            case PlayerState.JumpStart:
+                JumpStartResponse();
+                break;
+            case PlayerState.JustLaunched:
+                JustLaunchedResponse();
+                break;
+            case PlayerState.LaunchStart:
+                LaunchStartResponse();
+                break;
+            case PlayerState.OnGround:
+                OnGroundResponse();
+                break;
+            case PlayerState.SlopeFrame:
+                SlopeFrameResponse();
+                break;
+            default:
+                break;
+		}
+
+
+        //Apply Movement
+        _movement.y = _vertSpeed;
+        _movement *= Time.deltaTime;
+        if (_framesSinceLaunch != 6) { _framesSinceLaunch++; }
+        _charController.Move(_movement);
+    }
+
+	#region State Responses
+    private void OnGroundResponse()
+    {
+        handleHorizontalMovement();
+        handleCameraRotation();
+        rotatePlayerBasedOnMovement();
+        setCrouchingValues(false);
+        _animator.SetFloat("Speed", _movement.sqrMagnitude);
+    }
+    private void CrouchingResponse() 
+    {
+        //State: Crouching = True
+        _animator.SetBool("Crouching", true); //might get overwritten later
+        if (_wiggleInputButton == WiggleInput.LeftStick) setCrouchingValues(true);
+        //else if (_wiggleInputButton == WiggleInput.RightTrigger) setCrouchingValues(true, Input.GetAxis("RightTrigger"));
+    }
+    private void JumpStartResponse() 
+    {
+        handleHorizontalMovement();
+        handleCameraRotation();
+        rotatePlayerBasedOnMovement();
+        setCrouchingValues(false);
+        //Jump-specific code
+        _vertSpeed = _jumpSpeed;
+        _inMiddleOfJumping = true;
+
+    }
+    private void CoyoteTimeResponse() 
+    {
+        handleHorizontalMovement();
+        handleCameraRotation();
+        rotatePlayerBasedOnMovement();
+        setCrouchingValues(false);
+    }
+    private void FallingResponse() 
+    {
+        handleHorizontalMovement();
+        handleCameraRotation();
+        rotatePlayerBasedOnMovement();
+        setCrouchingValues(false);
+
+        _animator.SetBool("Jumping", true);
+
+        //If grounded means: if bottom-curvature of capsule is touching something
+        if (_charController.isGrounded && !_inMiddleOfLaunching) //TODO: _launching check should be improved. Just helps prevent edge-jitters during launching for Demo purposes
+        {
+            float contactDot = Vector3.Dot(_movement, _contact.normal);
+            //What is a normal? https://answers.unity.com/questions/588972/what-is-a-normal.html
+            //What is a dot product of vector? https://byjus.com/maths/dot-product-of-two-vectors/#:~:text=Dot%20Product%20of%20Vectors%3A,the%20direction%20of%20the%20vectors.
+            //What is the magnitude of a vector? https://www.cuemath.com/magnitude-of-a-vector-formula/
+
+            if (contactDot < 0)
+            {
+                //the surface normal and our object are facing away from each other
+                _movement = _contact.normal * _moveSpeed; //going up a slope. Dont let player keep their movement
+            }
+            else
+            {
+                //the surface normal and our object are facing towards each other
+                _movement += _contact.normal * _moveSpeed; //going down a steep slope. Let player keep their movement
+            }
+        }
+    }
+    private void LaunchStartResponse() 
+    {
+        //LAUNCH HIM
+
+        //ver.1 
+        /*Vector3 launchDirection = _virtualCameraCineObj.LookAt.transform.position - normalCameraObject.transform.position;
+        movement = Vector3.ClampMagnitude(launchDirection, _launchSpeed * _wiggleSpeed);
+        _vertSpeed = movement.y;
+        _inMiddleOfJumping = true;*/
+
+        //ver.2
+
+        _movement = target.TransformDirection(new Vector3(0.0f, 0.0f, _launchSpeed * _wiggleSpeed));
+        _movement.y = _movement.y + 12;
+        _vertSpeed = _movement.y;
+        _inMiddleOfJumping = true;
+        _inMiddleOfLaunching = true;
+        _framesSinceLaunch = 0;
+        _launchXSpeed = _movement.x;
+        _launchZSpeed = _movement.z;
+        _animator.SetBool("Jumping", true);
+        setCrouchingValues(false);
+    }
+    private void JustLaunchedResponse() 
+    { 
+        _inMiddleOfLaunching = true;
+        _movement.x = _launchXSpeed;
+        _movement.z = _launchZSpeed;
+    }
+    private void SlopeFrameResponse() 
+    {
+        handleHorizontalMovement();
+        handleCameraRotation();
+        rotatePlayerBasedOnMovement();
+        setCrouchingValues(false);
+        //TODO: Iron out this downard-slope-walking math
+        //float angleOfGroundNormal;
+        //float normalGroundMagnitude
+        //Vector3 normalXAndZ = new Vector3(movement.)
+        //If character wasn't falling last frame... there's a chance they're just walking down a slope. Let's try shoving the character downward for a single frame
+        Vector3 horizontalDisplacement = new Vector3(_movement.x, 0, _movement.z);
+        float groundSpeed = horizontalDisplacement.sqrMagnitude;
+        _vertSpeed = -3 * groundSpeed * Mathf.Tan(_steepestWalkableAngle); //TODO: assumes "worst-case" scenario (walking down the slope as steeply as possible) - which may not match what's actually happening
+        _wasFallingLastFrame = true;
+    }
+    private void DeathPlaneHitResponse() 
+    {
+        transform.position = _spawnPosition;
+        setCrouchingValues(false);
+    }
+	#endregion State Responses
+
+    private void handleHorizontalMovement() 
+    {
+        //only handle movement while arrow keys are pressed
+        _launchXSpeed = 0.0f;
+        _launchZSpeed = 0.0f;
+        _movement.x = _horInput * _moveSpeed;
+        _movement.z = _vertInput * _moveSpeed;
+        _movement = Vector3.ClampMagnitude(_movement, _moveSpeed); //needed to ensure diagonal movement does not exceed the max speed
+    }
+
+    private void handleCameraRotation() {
+        if (_isDebugging) { Debug.Log("Camera rotation: " + target.rotation); }
+        Quaternion tmp = target.rotation; //Keep the inital rotation to restore after finishing with the target object
+        target.eulerAngles = new Vector3(0, target.eulerAngles.y, 0); //We need to imagine the target is level with the player, for a couple lines
+        _movement = target.TransformDirection(_movement); //Transform movement direction from Local to Global coordinates, and do it from the perspective of the target
+        target.rotation = tmp; //restore target's
+
+        #region Rotate the player
+        #region When not using Lerp
+        //transform.rotation = Quaternion.LookRotation(movement); //LookRotation() calculates a quaternion facing in that direction
+        #endregion
+    }
+
+    private void rotatePlayerBasedOnMovement() 
+    {
+        Debug.Log("rotate player start... who knows though");
+        if(_movement.x != 0.0f || _movement.z != 0.0f) 
+        {
+            Debug.Log("Rotate player now!!!");
+            Quaternion direction = Quaternion.LookRotation(_movement);
+            transform.rotation = Quaternion.Lerp(transform.rotation, direction, _visualRotationSpeed * Time.deltaTime);
+        }
+    }
 	private void OnControllerColliderHit(ControllerColliderHit hit)
 	{
         _contact = hit;
@@ -293,9 +392,9 @@ public class RelativeMovement : MonitoredBehaviour
 		}
 	}
 
-    private void setCrouchingValues(bool isCrouchingNow, float horInput = 0.0f) 
+    private void setCrouchingValues(bool isCrouchingNow) 
     {
-        _wiggleXInput = horInput;
+        _wiggleXInput = _horInput;
         if(isCrouchingNow) 
         {
             _isCrouching = true;
@@ -304,14 +403,14 @@ public class RelativeMovement : MonitoredBehaviour
             if(_howToWiggle==WiggleMechanics.Hold) 
             {
                 //Ver. 1 - Holding left or right
-                if (horInput > 0.01 || horInput < -0.01) { _wiggleSpeed = Mathf.Min(3.0f, Mathf.Max(0.5f, _wiggleSpeed) + 0.008f); }
+                if (_horInput > 0.01 || _horInput < -0.01) { _wiggleSpeed = Mathf.Min(3.0f, Mathf.Max(0.5f, _wiggleSpeed) + 0.008f); }
                 else { _wiggleSpeed = 0.0f; }
             }
             else if(_howToWiggle==WiggleMechanics.Mash) 
             {
                 //Ver. 2 - Mashing left and right
-                float horInputAbs = Mathf.Abs(horInput);
-                if (horInputAbs < 0.01 || (_nextExpectedWiggleDirection!= 0 && horInput*_nextExpectedWiggleDirection < 0.01))
+                float horInputAbs = Mathf.Abs(_horInput);
+                if (horInputAbs < 0.01 || (_nextExpectedWiggleDirection!= 0 && _horInput * _nextExpectedWiggleDirection < 0.01))
                 {
                     _framesOfNoWiggle++;
                     if (_framesOfNoWiggle > 30) { 
@@ -329,8 +428,8 @@ public class RelativeMovement : MonitoredBehaviour
                     {
                         _wiggleSpeed += 0.15f;
                     }
-                    Debug.Log("Flick strength: " + horInput);
-                    if(horInput>0.0) { _nextExpectedWiggleDirection = -1; }
+                    Debug.Log("Flick strength: " + _horInput);
+                    if(_horInput > 0.0) { _nextExpectedWiggleDirection = -1; }
                     else { _nextExpectedWiggleDirection = 1; }
                     _framesOfNoWiggle = 0;
                     _wiggleSpeed = Mathf.Min(3.0f, Mathf.Max(0.5f, _wiggleSpeed));
@@ -338,7 +437,7 @@ public class RelativeMovement : MonitoredBehaviour
 			}
             else if(_howToWiggle==WiggleMechanics.Hybrid) {
                 float amountToAdd = 0.0f;
-                float horInputAbs = Mathf.Abs(horInput);
+                float horInputAbs = Mathf.Abs(_horInput);
                 if (horInputAbs < 0.01) { _framesOfNoWiggle++; }
                 else { _framesOfNoWiggle = 0; }
                 if (_framesOfNoWiggle > 7)
@@ -350,7 +449,7 @@ public class RelativeMovement : MonitoredBehaviour
                 {
                     amountToAdd = 0.4f;
                     //Ver. 2 - Mashing left and right
-                    if (_nextExpectedWiggleDirection != 0 && horInput * _nextExpectedWiggleDirection < 0.01)
+                    if (_nextExpectedWiggleDirection != 0 && _horInput * _nextExpectedWiggleDirection < 0.01)
                     {
                         //nada
                     }
@@ -358,14 +457,14 @@ public class RelativeMovement : MonitoredBehaviour
                     {
                         if (horInputAbs < 0.7)
                         {
-                            amountToAdd += 1.6f;
+                            amountToAdd += 2.4f;
                         }
                         else
                         {
-                            amountToAdd += 2.8f;
+                            amountToAdd += 3.8f;
                         }
-                        Debug.Log("Flick strength: " + horInput);
-                        if (horInput > 0.0) { _nextExpectedWiggleDirection = -1; }
+                        Debug.Log("Flick strength: " + _horInput);
+                        if (_horInput > 0.0) { _nextExpectedWiggleDirection = -1; }
                         else { _nextExpectedWiggleDirection = 1; }
                     }
                     _wiggleSpeed = Mathf.Min(3.0f, Mathf.Max(0.65f, _wiggleSpeed + amountToAdd * Time.deltaTime));
@@ -404,3 +503,18 @@ enum WiggleInput {
     LeftStick,
     RightTrigger
 }
+
+enum PlayerState
+{
+    OnGround,
+    Crouching,
+    JumpStart,
+    CoyoteTime,
+    Falling,
+    LaunchStart,
+    JustLaunched,
+    SlopeFrame,
+    DeathPlaneHit,
+    Unknown
+}
+#endregion
