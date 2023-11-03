@@ -19,11 +19,11 @@ public class CameraMarkBehavior : MonitoredBehaviour
     private bool _fallingApparently = false;
     [SerializeField]
     private Camera _camera;
-    [MonitorField]
+    //[MonitorField]
     private Vector3 _viewportPosition;
     private bool _isCrouching;
     private float _visualFocusSpeed = 18.0f;
-    [MonitorField]
+    //[MonitorField]
     public bool needToFocus = false;
     // Start is called before the first frame update
     void Start()

@@ -27,7 +27,7 @@ public class RelativeMovement : MonitoredBehaviour
 
 
     #region Jumping/falling constants
-    [MonitorField]
+    //[MonitorField]
     public bool hitGround = false;
     /// <summary> Jumping speed, correlates with how high the object can rise when it jumps</summary>
     public float _jumpSpeed = 12.5f;
@@ -55,32 +55,29 @@ public class RelativeMovement : MonitoredBehaviour
     [MonitorField]
     private PlayerState _playerState;
     private Vector3 _movement;
-    [MonitorField]
     private float _horInput;
     private float _vertInput;
     /// <summary> Current vertical speed (with regard to falling & jumping </summary>
-    [MonitorField]
+    //[MonitorField]
     private float _vertSpeed;
     
     /// <summary> Number of frames in the air </summary>
     private int _framesInTheAir;
     /// <summary> True if in the air due to jumping </summary>
     private bool _inMiddleOfJumping = false;
-    [MonitorField]
+    //[MonitorField]
     private bool _inMiddleOfLaunching = false;
-    [MonitorField]
+    //[MonitorField]
     private int _framesSinceLaunch = 6;
     private float _launchXSpeed = 0.0f;
     private float _launchZSpeed = 0.0f;
     /// <summary> True if this object was in a state of "falling" last frame </summary>
-    [MonitorField]
+    //[MonitorField]
     private bool _wasFallingLastFrame;
     private bool _isCrouching;
     [MonitorField]
     private float _wiggleSpeed = 0.0f;
-    [MonitorField]
     private float _wiggleXInput = 0.0f;
-    [MonitorField]
     private int _framesOfNoWiggle = 0;
     private int _nextExpectedWiggleDirection = 0;
     /// <summary> CharacterController object, used for movement </summary>
@@ -90,7 +87,6 @@ public class RelativeMovement : MonitoredBehaviour
 
     private Vector3 _spawnPosition;
 
-    [MonitorField]
     private float _crouchInput;
     #region Debug Booleans
     [SerializeField] private bool _isDebugging = false;
@@ -116,14 +112,54 @@ public class RelativeMovement : MonitoredBehaviour
         _vertInput = Input.GetAxis("Vertical");
         _crouchInput = Input.GetAxis("Crouch");
         _animator.SetBool("Crouching", false); //might get overwritten later
+        bool isFallingThisFrame = false;
         if (_framesSinceLaunch < 6) {
             //State: JustLaunched = True / Response
             _playerState = PlayerState.JustLaunched;
             _inMiddleOfLaunching = true;
-		}
+        }
         else {
             _inMiddleOfLaunching = false;
 		}
+
+        if (_playerState == PlayerState.JustLaunched)
+        {
+            //Check if we should grab a ledge
+            RaycastHit possibleWallHit;
+            RaycastHit possibleFloorHit;
+            if (Physics.Raycast(transform.position + new Vector3(0.0f, 0.5f, 0.0f), transform.forward, out possibleWallHit))
+            {
+                //State: Grounded = True
+                float checkPassDistance = 3.0f;
+                bool hitWall = possibleWallHit.distance <= checkPassDistance;
+                if (hitWall)
+                {
+
+                    Debug.Log("GRAB THE WALL");
+
+                    Vector3 invisibleFloatingPointAboveSurface =
+                        transform.position +
+                        new Vector3(
+                            (float)((possibleWallHit.distance + 0.1) * possibleWallHit.normal.x * -1),
+                            (float)1.0,
+                            (float)((possibleWallHit.distance + 0.1) * possibleWallHit.normal.z * -1)
+                        );
+
+                    Debug.Log("Current transform: " + transform.position);
+                    Debug.Log("Invisible floor point: " + invisibleFloatingPointAboveSurface);
+                    if (Physics.Raycast(invisibleFloatingPointAboveSurface, Vector3.down, out possibleFloorHit))
+                    {
+                        if (possibleFloorHit.point.y > possibleWallHit.point.y)
+                        {
+                            Debug.Log("Grab the ledge!!!!");
+                            _playerState = PlayerState.GrabLedgeStart;
+                            GrabLedgeStartResponse(possibleFloorHit.point);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
         #region Jumping/Falling Movement
         hitGround = false;
         RaycastHit hit;
@@ -153,6 +189,7 @@ public class RelativeMovement : MonitoredBehaviour
             _vertSpeed = _initialFallVelocity;
             _animator.SetBool("Jumping", false);
             _inMiddleOfJumping = false;
+            _wasFallingLastFrame = false;
             _framesInTheAir = 0;
             if (_crouchInput == 1.00f)
             {
@@ -172,8 +209,8 @@ public class RelativeMovement : MonitoredBehaviour
             _framesInTheAir++;
             setCrouchingValues(false);
             _vertSpeed = Mathf.Max(_terminalFallVelocity, _vertSpeed + _gravity * 5 * Time.deltaTime);
-
-            if (!_wasFallingLastFrame && _framesSinceLaunch==6 && _playerState != PlayerState.JustLaunched)
+            isFallingThisFrame = true;
+            if (!_wasFallingLastFrame && _vertSpeed < 0 && _framesSinceLaunch==6 && _playerState != PlayerState.JustLaunched)
             {
                 //State: SlopeFrame
                 _playerState = PlayerState.SlopeFrame;
@@ -193,6 +230,10 @@ public class RelativeMovement : MonitoredBehaviour
         }
 
         #endregion Death Plane Code
+
+        //Reset _wasFallingLastFrame..
+        if (isFallingThisFrame) _wasFallingLastFrame = true;
+        else { _wasFallingLastFrame = false; }
 
         switch (_playerState){
             case PlayerState.CoyoteTime:
@@ -225,7 +266,6 @@ public class RelativeMovement : MonitoredBehaviour
             default:
                 break;
 		}
-
 
         //Apply Movement
         _movement.y = _vertSpeed;
@@ -340,7 +380,15 @@ public class RelativeMovement : MonitoredBehaviour
         Vector3 horizontalDisplacement = new Vector3(_movement.x, 0, _movement.z);
         float groundSpeed = horizontalDisplacement.sqrMagnitude;
         _vertSpeed = -3 * groundSpeed * Mathf.Tan(_steepestWalkableAngle); //TODO: assumes "worst-case" scenario (walking down the slope as steeply as possible) - which may not match what's actually happening
-        _wasFallingLastFrame = true;
+
+        Debug.Log("Dumb slope code has run");
+    }
+
+    private void GrabLedgeStartResponse(Vector3 newPosition)
+    {
+        transform.position = newPosition;
+        _vertSpeed = _terminalFallVelocity;
+        _framesSinceLaunch = 6;
     }
     private void DeathPlaneHitResponse() 
     {
@@ -374,10 +422,8 @@ public class RelativeMovement : MonitoredBehaviour
 
     private void rotatePlayerBasedOnMovement() 
     {
-        Debug.Log("rotate player start... who knows though");
         if(_movement.x != 0.0f || _movement.z != 0.0f) 
         {
-            Debug.Log("Rotate player now!!!");
             Quaternion direction = Quaternion.LookRotation(_movement);
             transform.rotation = Quaternion.Lerp(transform.rotation, direction, _visualRotationSpeed * Time.deltaTime);
         }
@@ -428,7 +474,6 @@ public class RelativeMovement : MonitoredBehaviour
                     {
                         _wiggleSpeed += 0.15f;
                     }
-                    Debug.Log("Flick strength: " + _horInput);
                     if(_horInput > 0.0) { _nextExpectedWiggleDirection = -1; }
                     else { _nextExpectedWiggleDirection = 1; }
                     _framesOfNoWiggle = 0;
@@ -463,7 +508,6 @@ public class RelativeMovement : MonitoredBehaviour
                         {
                             amountToAdd += 3.8f;
                         }
-                        Debug.Log("Flick strength: " + _horInput);
                         if (_horInput > 0.0) { _nextExpectedWiggleDirection = -1; }
                         else { _nextExpectedWiggleDirection = 1; }
                     }
@@ -514,6 +558,7 @@ enum PlayerState
     LaunchStart,
     JustLaunched,
     SlopeFrame,
+    GrabLedgeStart,
     DeathPlaneHit,
     Unknown
 }
